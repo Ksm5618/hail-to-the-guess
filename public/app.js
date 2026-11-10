@@ -756,7 +756,7 @@
     const typing = e.target instanceof HTMLInputElement;
     const screen = document.querySelector('.screen.active').id;
     if (e.key.toLowerCase() === 'm' && !typing && !e.metaKey && !e.ctrlKey) { Sound.toggle(); return; }
-    if (screen === 'home' && e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); startRound(); }
+    if (screen === 'home' && document.body.dataset.game !== 'sim' && e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); startRound(); }
     if (screen === 'game') {
       if (e.key === 'Escape' && game.phase === 'guessing') { e.preventDefault(); submitGuess(''); }
       if (/^[1-4]$/.test(e.key) && !typing && game.phase === 'guessing' && game.round.style === 'choice') {
@@ -768,5 +768,6 @@
     if (screen === 'results' && e.key === 'Enter' && !typing && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); startRound(); }
   });
 
+  window.HTG = { api, Sound, Confetti, toast, show, el, sleep, flash, slam, shakeScreen, store, reduceMotion, loadHome };
   loadHome();
 })();

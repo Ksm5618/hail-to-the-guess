@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const presidents = require('../data/presidents');
 const { check } = require('./match');
 const store = require('./store');
+const sim = require('./sim/engine');
 
 const ROOT = path.join(__dirname, '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -436,6 +437,52 @@ async function handle(req, res) {
         if (result.duplicate) return fail(res, 409, 'Already on the board.');
         return send(res, 201, { rank: result.rank, entries: await store.leaderboard(board, 20), you: st.id });
       }
+    }
+
+    // ---------------- Oval Office (be the president) ----------------
+    if (p === '/api/sim/meta' && req.method === 'GET') {
+      return send(res, 200, {
+        parties: Object.entries(sim.PARTIES).map(([key, v]) => ({ key, ...v })),
+        backgrounds: Object.entries(sim.BACKGROUNDS).map(([key, v]) => ({ key, label: v.label, emoji: v.emoji, blurb: v.blurb, perk: v.perk })),
+        states: sim.STATES.map(([abbr, name, ev, , col, row]) => ({ abbr, name, ev, col, row })),
+      });
+    }
+
+    if (p === '/api/sim/leaderboard' && req.method === 'GET') {
+      return send(res, 200, { entries: await store.leaderboard('sim', 20) });
+    }
+
+    if (p === '/api/sim/start' && req.method === 'POST') {
+      if (!allow(ip + ':sim', 1, 20, 0.2)) return fail(res, 429, 'Too many new games — take a breath.');
+      const body = await readJson(req);
+      const s = sim.newGame(body);
+      return send(res, 201, { token: issue(s), state: sim.view(s), card: sim.cardView(s) });
+    }
+
+    if (p === '/api/sim/choose' && req.method === 'POST') {
+      const body = await readJson(req);
+      const s = open(body.token);
+      if (!s || !s.m) return fail(res, 404, 'Game not found — start a new term.');
+      if (s.ended) return fail(res, 409, 'Your presidency is over.');
+      const choice = Number(body.choice);
+      if (!Number.isInteger(choice) || choice < -1 || choice > 3) return fail(res, 400, 'Invalid choice.');
+      if (!spend(s.n)) return fail(res, 409, 'That decision was already made.');
+      const out = sim.choose(s, choice);
+      if (out.error) return fail(res, 409, out.error);
+      return send(res, 200, { token: issue(s), outcome: out, state: sim.view(s), card: s.ended ? null : sim.cardView(s) });
+    }
+
+    if (p === '/api/sim/submit' && req.method === 'POST') {
+      const body = await readJson(req);
+      const s = open(body.token);
+      if (!s || !s.m) return fail(res, 404, 'Game not found.');
+      if (!s.ended) return fail(res, 409, 'Finish your presidency first.');
+      if (!spend(`simsubmit:${s.id}`)) return fail(res, 409, 'Already in the Hall of Legacies.');
+      const legacy = sim.legacyOf(s);
+      const entry = { id: s.id, name: cleanName(body.name || s.name), score: legacy.score, total: 100, totalMs: 0, tier: legacy.tier, emoji: legacy.emoji, outcome: s.ended, party: s.party, at: Date.now() };
+      const result = await store.addScore('sim', entry);
+      if (result.duplicate) return fail(res, 409, 'Already in the Hall of Legacies.');
+      return send(res, 201, { rank: result.rank, entries: await store.leaderboard('sim', 20), you: s.id });
     }
 
     fail(res, 404, 'Unknown endpoint');

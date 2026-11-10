@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Hail to the Guess</title>
-  <meta name="description" content="Name the U.S. president from the portrait. 10 faces. 10 points. How presidential are you?" />
+  <meta name="description" content="Name the U.S. presidents from their portraits — then become one. Survive crises, win elections, build a legacy." />
   <meta name="theme-color" content="#070b1f" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/sim.css" />
 </head>
 <body>
   <canvas id="stars" aria-hidden="true"></canvas>
@@ -37,9 +38,15 @@
         <span class="t2">to the</span>
         <span class="t3">Guess</span>
       </h1>
-      <p class="tagline">10 portraits. 10 points. Name the president before the clock runs out.</p>
+      <p class="tagline">Name the presidents. Then become one.</p>
     </div>
 
+    <div class="game-switch" role="tablist" aria-label="Choose a game">
+      <button type="button" role="tab" data-game="quiz"><span class="gs-emoji">🖼️</span><span><b>Name the President</b><small>10 faces · 10 points</small></span></button>
+      <button type="button" role="tab" data-game="sim"><span class="gs-emoji">🏛️</span><span><b>Be the President</b><small>Crises · Elections · Legacy</small></span><i class="new-badge">NEW</i></button>
+    </div>
+
+    <div id="quiz-home">
     <section class="modes" aria-label="Choose a mode" id="modes"></section>
 
     <div class="styles" id="styles" role="radiogroup" aria-label="How do you want to answer?">
@@ -63,6 +70,43 @@
         <h3 class="sub">Hall of Shame <small>— most forgotten faces</small></h3>
         <ol class="shame" id="shame"><li class="lb-empty">Not enough data yet. Go play!</li></ol>
       </section>
+    </div>
+    </div>
+
+    <div id="sim-home" class="hidden">
+      <section class="sim-pitch">
+        <div class="pitch-copy">
+          <h2>The phone rings at 3 a.m.</h2>
+          <p>You're the President of the United States. Banks are collapsing, hurricanes are coming, a dictator is testing missiles, and Congress wants your head.</p>
+          <ul class="pitch-list">
+            <li><b>40+ crises</b> with real trade-offs. No perfect answers.</li>
+            <li><b>7 meters</b>: economy, security, diplomacy, environment, unity, treasury, and your base.</li>
+            <li><b>Consequences come back</b> years later. Cover-ups get investigated.</li>
+            <li><b>Midterms, a re-election night map,</b> and an impeachment if you earn one.</li>
+            <li><b>Your legacy</b>, ranked against every president in history.</li>
+          </ul>
+        </div>
+        <div class="pitch-meters" aria-hidden="true">
+          <div><span>💰</span><i style="--v:72%"></i></div><div><span>🛡️</span><i style="--v:58%"></i></div><div><span>🌐</span><i style="--v:44%"></i></div>
+          <div><span>🌱</span><i style="--v:31%"></i></div><div><span>🤝</span><i style="--v:63%"></i></div><div><span>🏦</span><i style="--v:22%" class="low"></i></div>
+        </div>
+      </section>
+      <button id="sim-play" class="btn btn-mega"><span>Run for President</span><kbd>Enter</kbd></button>
+      <div class="home-grid">
+        <section class="panel">
+          <header class="panel-head"><h2>🏛️ Hall of Legacies</h2></header>
+          <ol class="lb lb-sim" id="sim-lb"><li class="lb-empty">Loading…</li></ol>
+        </section>
+        <section class="panel">
+          <header class="panel-head"><h2>📜 How it works</h2></header>
+          <ol class="howto">
+            <li>Every quarter brings a crisis. Choose 1 of 3 responses before the 45-second clock runs out.</li>
+            <li>Big moves cost <b>⚡ political capital</b>. Laws need <b>🏛️ Congress</b>, and you can lose it in the midterms.</li>
+            <li>Some choices are <b>🎲 gambles</b>. Your meters change the odds.</li>
+            <li>Win re-election after 4 years, survive 8, and let history judge you.</li>
+          </ol>
+        </section>
+      </div>
     </div>
 
     <footer class="foot">Portraits via Wikipedia / Wikimedia Commons. Typos forgiven. Nicknames welcome (JFK, FDR, Ike…).</footer>
@@ -171,7 +215,84 @@
     </div>
   </main>
 
+  <!-- ================= OVAL OFFICE: SETUP ================= -->
+  <main id="sim-setup" class="screen">
+    <button class="icon-btn back-btn" type="button" data-sim-home aria-label="Back to home">←</button>
+    <div class="oath-head">
+      <div class="seal" aria-hidden="true"><span>🦅</span></div>
+      <h1 class="sim-title">Take the Oath</h1>
+      <p class="tagline">Four years. Endless crises. One shot at history.</p>
+    </div>
+    <label class="field">
+      <span>Your name</span>
+      <input id="sim-name" maxlength="20" placeholder="e.g. Alex Morgan" autocomplete="off" spellcheck="false" />
+    </label>
+    <h3 class="step"><i>1</i> Choose your party</h3>
+    <div class="pick-grid three" id="sim-parties"></div>
+    <h3 class="step"><i>2</i> Your background</h3>
+    <div class="pick-grid five" id="sim-bgs"></div>
+    <button class="btn btn-mega" id="sim-oath" type="button"><span>I do solemnly swear</span></button>
+  </main>
+
+  <!-- ================= OVAL OFFICE: GAME ================= -->
+  <main id="sim" class="screen">
+    <header class="sim-hud">
+      <button class="icon-btn" id="sim-quit" type="button" aria-label="Resign and quit" title="Quit">✕</button>
+      <div class="sim-who"><b id="sim-who-name">President</b><small id="sim-who-sub"></small></div>
+      <div class="sim-date"><b id="sim-date">Year 1 · Q1</b><small id="sim-term">Term 1</small></div>
+    </header>
+
+    <section class="sim-dash">
+      <div class="approval" id="approval">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" class="ap-bg" />
+          <circle cx="60" cy="60" r="52" class="ap-fg" id="ap-ring" pathLength="100" />
+        </svg>
+        <div class="ap-num"><b id="ap-val">58</b><small>approve</small></div>
+      </div>
+      <div class="meters" id="meters"></div>
+      <div class="sim-chips">
+        <span class="chip" id="chip-pc" title="Political capital: spend it on big moves">⚡ <b>50</b> capital</span>
+        <span class="chip" id="chip-congress" title="Control of Congress">🏛️ <b>Congress</b></span>
+      </div>
+    </section>
+
+    <div class="term-track" id="term-track" aria-hidden="true"></div>
+
+    <article class="crisis" id="crisis" aria-live="polite">
+      <div class="crisis-top">
+        <span class="breaking">Breaking</span>
+        <span class="cat" id="crisis-cat">Economy</span>
+        <span class="sim-timer" id="sim-timer">45</span>
+      </div>
+      <h2 id="crisis-title"></h2>
+      <p id="crisis-text"></p>
+      <div class="advisors" id="advisors"></div>
+      <div class="decisions" id="decisions"></div>
+      <div class="timer-bar"><i id="sim-timer-bar"></i></div>
+    </article>
+
+    <div class="paper-wrap hidden" id="paper">
+      <div class="paper" role="dialog" aria-modal="true" aria-labelledby="paper-head">
+        <div class="paper-mast">The National Ledger</div>
+        <div class="paper-date" id="paper-date"></div>
+        <div class="roller" id="roller"></div>
+        <h2 id="paper-head"></h2>
+        <div class="paper-choice" id="paper-choice"></div>
+        <div class="deltas" id="paper-deltas"></div>
+        <button class="btn btn-go" id="paper-next" type="button">Continue <kbd>Enter</kbd></button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= OVAL OFFICE: MIDTERMS / ELECTION NIGHT ================= -->
+  <main id="sim-event" class="screen"><div id="event-body"></div></main>
+
+  <!-- ================= OVAL OFFICE: ENDING ================= -->
+  <main id="sim-end" class="screen"><div id="end-body"></div></main>
+
   <div class="toast" id="toast" role="status"></div>
   <script src="/app.js"></script>
+  <script src="/sim.js"></script>
 </body>
 </html>
