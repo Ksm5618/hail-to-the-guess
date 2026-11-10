@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: hail-to-the-guess
+    runtime: node
+    plan: free
+    buildCommand: echo "no build needed"
+    startCommand: npm start
+    healthCheckPath: /api/meta
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Hail to the Guess</title>
+  <meta name="description" content="Name the U.S. president from the portrait. 10 faces. 10 points. How presidential are you?" />
+  <meta name="theme-color" content="#070b1f" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <canvas id="stars" aria-hidden="true"></canvas>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+  <div class="stripes" aria-hidden="true"></div>
+
+  <button id="mute" class="icon-btn mute" aria-label="Toggle sound" title="Sound (M)">🔊</button>
+
+  <!-- ================= HOME ================= -->
+  <main id="home" class="screen active">
+    <div class="hero">
+      <div class="seal" aria-hidden="true"><span>★</span></div>
+      <h1 class="title">
+        <span class="t1">Hail</span>
+        <span class="t2">to the</span>
+        <span class="t3">Guess</span>
+      </h1>
+      <p class="tagline">10 portraits. 10 points. Name the president before the clock runs out.</p>
+    </div>
+
+    <section class="modes" aria-label="Choose a mode" id="modes"></section>
+
+    <button id="play" class="btn btn-mega"><span>Play</span><kbd>Enter</kbd></button>
+
+    <div class="home-grid">
+      <section class="panel">
+        <header class="panel-head">
+          <h2>🏆 Leaderboard</h2>
+          <div class="tabs" id="lb-tabs" role="tablist"></div>
+        </header>
+        <ol class="lb" id="home-lb"><li class="lb-empty">Loading…</li></ol>
+      </section>
+      <section class="panel">
+        <header class="panel-head"><h2>📊 The Nation Reports</h2></header>
+        <div class="gstats" id="gstats"></div>
+        <h3 class="sub">Hall of Shame <small>— most forgotten faces</small></h3>
+        <ol class="shame" id="shame"><li class="lb-empty">Not enough data yet. Go play!</li></ol>
+      </section>
+    </div>
+
+    <footer class="foot">Portraits via Wikipedia / Wikimedia Commons. Typos forgiven. Nicknames welcome (JFK, FDR, Ike…).</footer>
+  </main>
+
+  <!-- ================= GAME ================= -->
+  <main id="game" class="screen" aria-live="polite">
+    <header class="hud">
+      <button class="icon-btn" id="quit" aria-label="Quit round" title="Quit">✕</button>
+      <div class="pips" id="pips"></div>
+      <div class="hud-right">
+        <div class="streak" id="streak" title="Streak"><span class="flame">🔥</span><b id="streak-n">0</b></div>
+        <div class="score"><span class="score-label">Score</span><b id="score">0</b></div>
+      </div>
+    </header>
+
+    <div class="stage">
+      <div class="q-label" id="q-label">Question 1 of 10</div>
+
+      <div class="card-wrap" id="card-wrap">
+        <div class="card" id="card">
+          <div class="face front">
+            <svg class="ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <rect class="ring-bg" x="1.5" y="1.5" width="97" height="97" rx="6" ry="6" pathLength="100" />
+              <rect class="ring-fg" id="ring" x="1.5" y="1.5" width="97" height="97" rx="6" ry="6" pathLength="100" />
+            </svg>
+            <div class="frame">
+              <img id="portrait" alt="Mystery president portrait" draggable="false" />
+              <div class="loader" id="loader"><span></span><span></span><span></span></div>
+              <div class="timer-chip" id="timer-chip"><span id="timer">20</span>s</div>
+            </div>
+          </div>
+          <div class="face back" id="back">
+            <div class="verdict" id="verdict">Correct!</div>
+            <div class="reveal-num" id="reveal-num">#16</div>
+            <div class="reveal-name" id="reveal-name">Abraham Lincoln</div>
+            <div class="reveal-meta"><span id="reveal-years"></span><span class="dot">•</span><span id="reveal-party"></span></div>
+            <p class="reveal-fact" id="reveal-fact"></p>
+            <div class="reveal-your" id="reveal-your"></div>
+            <div class="reveal-global" id="reveal-global"></div>
+          </div>
+        </div>
+        <div class="float-pts" id="float-pts">+1</div>
+      </div>
+
+      <form class="answer" id="answer-form" autocomplete="off">
+        <input id="guess" name="guess" type="text" placeholder="Who's this?" maxlength="60" spellcheck="false" autocapitalize="words" aria-label="Your guess" />
+        <button type="submit" class="btn btn-go" id="submit">Lock&nbsp;in</button>
+      </form>
+      <div class="answer-actions">
+        <button class="link-btn" id="skip" type="button">Pass <kbd>Esc</kbd></button>
+        <span class="hint" id="hint"></span>
+      </div>
+      <button class="btn btn-next hidden" id="next" type="button">Next <kbd>Enter</kbd></button>
+    </div>
+  </main>
+
+  <!-- ================= RESULTS ================= -->
+  <main id="results" class="screen">
+    <div class="res-top">
+      <div class="badge" id="badge">🏛️</div>
+      <div class="res-rank" id="res-rank">Senator</div>
+      <div class="res-score"><b id="res-score">0</b><span>/<i id="res-total">10</i></span></div>
+      <div class="stars-row" id="stars-row"></div>
+      <div class="res-stats">
+        <div><b id="res-streak">0</b><span>Best streak</span></div>
+        <div><b id="res-time">0s</b><span>Avg answer</span></div>
+        <div><b id="res-mode">All-Time</b><span>Mode</span></div>
+      </div>
+    </div>
+
+    <form class="save" id="save-form" autocomplete="off">
+      <input id="player" maxlength="16" placeholder="Your name for the leaderboard" aria-label="Your name" />
+      <button class="btn btn-go" type="submit" id="save-btn">Save score</button>
+    </form>
+    <div class="saved hidden" id="saved"></div>
+
+    <div class="res-actions">
+      <button class="btn btn-mega" id="again"><span>Play again</span><kbd>Enter</kbd></button>
+      <button class="btn btn-ghost" id="share">Copy result</button>
+      <button class="btn btn-ghost" id="home-btn">Home</button>
+    </div>
+
+    <div class="home-grid">
+      <section class="panel">
+        <header class="panel-head"><h2>Your round</h2></header>
+        <div class="recap" id="recap"></div>
+      </section>
+      <section class="panel">
+        <header class="panel-head"><h2>🏆 Leaderboard</h2></header>
+        <ol class="lb" id="res-lb"></ol>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
