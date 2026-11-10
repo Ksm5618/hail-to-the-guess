@@ -16,13 +16,25 @@
   };
 
   // ------------------------------------------------------------------ API
-  async function api(path, body) {
-    const res = await fetch(path, body === undefined ? {} : {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+  // fetch with a timeout and one automatic retry on network trouble / server hiccups.
+  // (Game actions are idempotent server-side, so retrying is safe.)
+  async function api(path, body, attempt = 0) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    let res;
+    try {
+      res = await fetch(path, {
+        signal: ctrl.signal,
+        ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      if (attempt < 1) return api(path, body, attempt + 1);
+      throw new Error(err.name === 'AbortError' ? 'The server is taking too long. Try again.' : 'Connection problem. Try again.');
+    }
+    clearTimeout(timer);
     const data = await res.json().catch(() => ({}));
+    if (res.status >= 500 && attempt < 1) return api(path, body, attempt + 1);
     if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
     return data;
   }
@@ -86,12 +98,17 @@
       dpr = Math.min(devicePixelRatio || 1, 2);
       w = c.width = innerWidth * dpr;
       h = c.height = innerHeight * dpr;
-      const n = Math.round((innerWidth * innerHeight) / 5000);
+      const n = Math.min(260, Math.round((innerWidth * innerHeight) / (innerWidth < 760 ? 9000 : 5000)));
       pts = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, r: (Math.random() * 1.4 + 0.3) * dpr, p: Math.random() * Math.PI * 2, s: Math.random() * 0.15 + 0.03 }));
     }
     resize();
     addEventListener('resize', resize);
+    let last = 0;
     function frame(t) {
+      // 30 fps is plenty for a starfield and halves the work on phones.
+      if (t - last < 33) { requestAnimationFrame(frame); return; }
+      last = t;
+      if (document.hidden) { requestAnimationFrame(frame); return; }
       x.clearRect(0, 0, w, h);
       for (const s of pts) {
         s.y -= s.s * dpr;

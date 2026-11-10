@@ -132,16 +132,19 @@ function allow(ip, cost = 1, capacity = 60, refillPerSec = 2) {
 
 // Each round token is spent once it's been used to move forward, so an old token
 // can't be replayed to retry a question (best effort: per instance on serverless).
+// The response is remembered too, so a client retrying after a dropped connection
+// gets the same answer back instead of being stuck.
 const spent = new Map();
-function spend(nonce) {
+function spend(nonce, resp = null) {
   if (spent.has(nonce)) return false;
-  spent.set(nonce, Date.now());
+  spent.set(nonce, { t: Date.now(), resp });
   if (spent.size > 50000) {
     const cutoff = Date.now() - ROUND_TTL_MS;
-    for (const [k, t] of spent) if (t < cutoff) spent.delete(k);
+    for (const [k, v] of spent) if (v.t < cutoff) spent.delete(k);
   }
   return true;
 }
+const replayOf = (nonce) => (spent.get(nonce) || {}).resp || null;
 
 const publicPresident = (p) => ({ name: p.name, numbers: p.numbers, years: p.years, party: p.party, fact: p.fact });
 
@@ -466,22 +469,32 @@ async function handle(req, res) {
       if (s.ended) return fail(res, 409, 'Your presidency is over.');
       const choice = Number(body.choice);
       if (!Number.isInteger(choice) || choice < -1 || choice > 3) return fail(res, 400, 'Invalid choice.');
-      if (spent.has(s.n)) return fail(res, 409, 'That decision was already made.');
+      if (spent.has(s.n)) {
+        const prev = replayOf(s.n);
+        return prev && prev.kind === 'choose' && prev.choice === choice ? send(res, 200, prev.body) : fail(res, 409, 'That decision was already made.');
+      }
+      const nonce = s.n;
       const out = sim.choose(s, choice);
       if (out.error) return fail(res, 409, out.error); // failed attempts don't burn the token
-      spend(s.n);
-      return send(res, 200, { token: issue(s), outcome: out, state: sim.view(s), card: s.ended ? null : sim.cardView(s) });
+      const result = { token: issue(s), outcome: out, state: sim.view(s), card: s.ended ? null : sim.cardView(s) };
+      spend(nonce, { kind: 'choose', choice, body: result });
+      return send(res, 200, result);
     }
 
     if (p === '/api/sim/post' && req.method === 'POST') {
       const body = await readJson(req);
       const s = open(body.token);
       if (!s || !s.m) return fail(res, 404, 'Game not found — start a new term.');
-      if (spent.has(s.n)) return fail(res, 409, 'That action was already taken.');
+      if (spent.has(s.n)) {
+        const prev = replayOf(s.n);
+        return prev && prev.kind === 'post' ? send(res, 200, prev.body) : fail(res, 409, 'That action was already taken.');
+      }
+      const nonce = s.n;
       const out = sim.post(s, String(body.tone || ''));
       if (out.error) return fail(res, 409, out.error);
-      spend(s.n);
-      return send(res, 200, { token: issue(s), post: out, state: sim.view(s), card: s.ended ? null : sim.cardView(s) });
+      const result = { token: issue(s), post: out, state: sim.view(s), card: s.ended ? null : sim.cardView(s) };
+      spend(nonce, { kind: 'post', body: result });
+      return send(res, 200, result);
     }
 
     if (p === '/api/sim/submit' && req.method === 'POST') {

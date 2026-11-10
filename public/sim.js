@@ -276,15 +276,22 @@
     cancelAnimationFrame(g.timerRaf);
     const buttons = [...document.querySelectorAll('#decisions .decision')];
     buttons.forEach((b, i) => { b.disabled = true; b.classList.toggle('picked', i === choice); });
+    for (const b of document.querySelectorAll('#tone-row button')) b.disabled = true;
     Sound.click();
+    g.skip = false;
+    openPaperShell(choice >= 0 ? g.card.options[choice].label : 'Indecision');
 
     let r;
     try {
       r = await api('/api/sim/choose', { token: g.token, choice });
     } catch (e) {
       toast(e.message);
+      const wrap = $('#paper');
+      wrap.classList.remove('open');
+      wrap.classList.add('hidden');
       g.busy = false;
       buttons.forEach((b, i) => { b.disabled = !g.card.options[i].affordable; b.classList.remove('picked'); });
+      renderCompose();
       startTimer();
       return;
     }
@@ -293,45 +300,70 @@
     await showPaper(r.outcome);
   }
 
-  async function showPaper(out) {
+  // Show the newspaper immediately so every click gets instant feedback.
+  function openPaperShell(choiceLabel) {
     const wrap = $('#paper');
     const s = g.state;
-    $('#paper-date').textContent = `Year ${s.year}, Quarter ${s.quarter} · ${out.title}`;
+    $('#paper-date').textContent = `Year ${s.year}, Quarter ${s.quarter} · ${g.card.title}`;
     $('#paper-head').textContent = '';
-    $('#paper-choice').textContent = out.choice === 'Indecision' ? '⏰ You ran out of time.' : `Your call: ${out.choice}`;
+    $('#paper-choice').textContent = choiceLabel === 'Indecision' ? '⏰ You ran out of time.' : `Your call: ${choiceLabel}`;
     $('#paper-deltas').replaceChildren();
     $('#paper-money').replaceChildren();
     $('#paper-next').classList.add('hidden');
     const roller = $('#roller');
-    roller.replaceChildren();
-    roller.className = 'roller';
+    roller.className = 'roller show';
+    roller.replaceChildren(el('span', { className: 'spin', textContent: '📞' }), el('span', { textContent: 'Making the call…' }));
     wrap.classList.remove('hidden');
     void wrap.offsetWidth;
     wrap.classList.add('open');
+  }
+
+  // A pause that ends early when the player taps to skip.
+  function pause(ms) {
+    if (reduceMotion || g.skip) return Promise.resolve();
+    return new Promise((resolve) => {
+      const t0 = performance.now();
+      const check = () => (g.skip || performance.now() - t0 >= ms ? resolve() : setTimeout(check, 30));
+      check();
+    });
+  }
+  $('#paper').addEventListener('pointerdown', (e) => { if (!e.target.closest('#paper-next')) g.skip = true; });
+
+  async function showPaper(out) {
+    const wrap = $('#paper');
+    const s = g.state;
+    $('#paper-date').textContent = `Year ${s.year}, Quarter ${s.quarter} · ${out.title}`;
+    const roller = $('#roller');
+    roller.replaceChildren();
+    roller.className = 'roller';
+    if (wrap.classList.contains('hidden')) {
+      wrap.classList.remove('hidden');
+      void wrap.offsetWidth;
+      wrap.classList.add('open');
+    }
 
     // Dramatic beat for votes and gambles.
     if (out.bill) {
       roller.className = 'roller show';
       roller.replaceChildren(el('span', { className: 'spin', textContent: '🏛️' }), el('span', { textContent: `Congress is voting… (${out.bill.odds}% odds)` }));
-      await suspense();
+      await pause(600);
       roller.replaceChildren(el('span', { className: `stamp ${out.bill.passed ? 'ok' : 'bad'}`, textContent: out.bill.passed ? 'Passed' : 'Blocked' }));
       out.bill.passed ? Sound.correct(2) : Sound.wrong();
-      await sleep(reduceMotion ? 0 : 500);
+      await pause(out.rolled ? 350 : 150);
     }
     if (out.rolled) {
       roller.className = 'roller show';
       roller.replaceChildren(el('span', { className: 'spin dice', textContent: '🎲' }), el('span', { textContent: `Rolling the dice… (${out.rolled.odds}% odds)` }));
-      await suspense();
+      await pause(650);
       roller.replaceChildren(el('span', { className: `stamp ${out.rolled.ok ? 'ok' : 'bad'}`, textContent: out.rolled.ok ? 'Success' : 'Failure' }));
       if (out.rolled.ok) { Sound.correct(3); flash('good'); } else { Sound.wrong(); flash('bad'); shakeScreen(); }
-      await sleep(reduceMotion ? 0 : 500);
+      await pause(150);
     }
 
     // Headline types out.
     const head = $('#paper-head');
     const text = out.news || '';
-    if (reduceMotion) head.textContent = text;
-    else for (let i = 1; i <= text.length; i += 2) { head.textContent = text.slice(0, i); await sleep(14); }
+    for (let i = 1; i <= text.length && !g.skip && !reduceMotion; i += 4) { head.textContent = text.slice(0, i); await sleep(12); }
     head.textContent = text;
 
     const entries = Object.entries(out.deltas).filter(([, v]) => v);
@@ -355,7 +387,6 @@
     $('#paper-next').focus({ preventScroll: true });
   }
 
-  const suspense = () => sleep(reduceMotion ? 200 : 1300);
 
   async function closePaper() {
     if (!g.pending) return;
@@ -363,7 +394,7 @@
     g.pending = null;
     const wrap = $('#paper');
     wrap.classList.remove('open');
-    await sleep(reduceMotion ? 0 : 250);
+    await sleep(reduceMotion ? 0 : 140);
     wrap.classList.add('hidden');
     g.prevEcon = g.state.econ;
     g.state = r.state;
@@ -371,7 +402,7 @@
     if (r.outcome.deltas.app >= 5) Confetti.burst({ x: 0.15, y: 0.15, count: 50, spread: 0.8 });
 
     if (r.outcome.event) {
-      await sleep(reduceMotion ? 0 : 600);
+      await sleep(reduceMotion ? 0 : 300);
       await (r.outcome.event.type === 'election' ? electionNight(r.outcome.event) : midterms(r.outcome.event));
     }
     if (r.outcome.ending) {
@@ -445,6 +476,9 @@
       }
       const status = el('div', { className: 'en-status', textContent: 'Polls are closing…' });
       const done = el('button', { className: 'btn btn-mega hidden', type: 'button' }, el('span', { textContent: 'Continue' }));
+      const skipBtn = el('button', { className: 'btn btn-ghost en-skip', type: 'button', textContent: 'Skip to results ⏭' });
+      g.skip = false;
+      skipBtn.addEventListener('click', () => { g.skip = true; skipBtn.remove(); });
       body.replaceChildren(el('div', { className: 'event election' },
         el('div', { className: 'event-kicker', textContent: 'Election night' }),
         el('div', { className: 'ev-race' },
@@ -454,6 +488,7 @@
         el('div', { className: 'ev-bar' }, yourBar, el('span', { className: 'ev-270' }), oppBar),
         map,
         status,
+        skipBtn,
         done));
       body.querySelector('.election').style.setProperty('--you', you);
       show('sim-event');
@@ -470,7 +505,7 @@
         if (close) {
           status.textContent = `Too close to call: ${st.name}…`;
           tiles.get(st.abbr).classList.add('pending');
-          await sleep(reduceMotion ? 50 : 700);
+          await pause(650);
         }
         const t = tiles.get(st.abbr);
         t.classList.remove('pending');
@@ -480,12 +515,15 @@
         oppEv.textContent = o;
         yourBar.style.width = `${(y / 538) * 100}%`;
         oppBar.style.width = `${(o / 538) * 100}%`;
-        if (close) { status.textContent = `${st.name} goes to ${st.won ? 'you' : 'the challenger'}!`; st.won ? Sound.correct(2) : Sound.tick(true); }
-        else Sound.tick(false);
-        setTimeout(step, reduceMotion ? 0 : close ? 350 : 90);
+        if (!g.skip) {
+          if (close) { status.textContent = `${st.name} goes to ${st.won ? 'you' : 'the challenger'}!`; st.won ? Sound.correct(2) : Sound.tick(true); }
+          else Sound.tick(false);
+        }
+        setTimeout(step, reduceMotion || g.skip ? 0 : close ? 300 : 70);
       };
       const finale = async () => {
-        await sleep(reduceMotion ? 0 : 600);
+        skipBtn.remove();
+        await sleep(reduceMotion ? 0 : 400);
         if (ev.won) {
           status.textContent = `You win ${ev.ev}–${ev.oppEv} with ${ev.popular}% of the popular vote. Four more years!`;
           slam('Re-elected!');
@@ -503,7 +541,7 @@
       };
       done.addEventListener('click', () => { Sound.click(); resolve(); });
       g.eventResolve = resolve;
-      setTimeout(step, reduceMotion ? 0 : 900);
+      setTimeout(step, reduceMotion ? 0 : 600);
     });
   }
 
@@ -905,7 +943,8 @@
     const typing = e.target instanceof HTMLInputElement;
     if (screen === 'home' && document.body.dataset.game === 'sim' && e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); openSetup(); }
     if (screen === 'sim') {
-      if (g.pending && e.key === 'Enter' && !$('#paper-next').classList.contains('hidden') && document.activeElement !== $('#paper-next')) { e.preventDefault(); closePaper(); }
+      if (!$('#paper').classList.contains('hidden') && $('#paper-next').classList.contains('hidden') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); g.skip = true; }
+      else if (g.pending && e.key === 'Enter' && !$('#paper-next').classList.contains('hidden') && document.activeElement !== $('#paper-next')) { e.preventDefault(); closePaper(); }
       else if (!g.busy && /^[1-3]$/.test(e.key) && !typing) {
         const i = Number(e.key) - 1;
         if (g.card && g.card.options[i]) { e.preventDefault(); decide(i); }
