@@ -3,3 +3,5 @@ test
 scripts
 data/db
 .git
+racing
+package-lock.json
