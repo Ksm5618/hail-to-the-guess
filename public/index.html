@@ -257,8 +257,11 @@
       </div>
     </section>
 
+    <section class="econ-strip" id="econ-strip" aria-label="Economic indicators"></section>
+
     <div class="term-track" id="term-track" aria-hidden="true"></div>
 
+    <div class="sim-body">
     <article class="crisis" id="crisis" aria-live="polite">
       <div class="crisis-top">
         <span class="breaking">Breaking</span>
@@ -268,9 +271,40 @@
       <h2 id="crisis-title"></h2>
       <p id="crisis-text"></p>
       <div class="advisors" id="advisors"></div>
+      <div class="shock hidden" id="shock"></div>
       <div class="decisions" id="decisions"></div>
       <div class="timer-bar"><i id="sim-timer-bar"></i></div>
     </article>
+
+    <aside class="sim-side" aria-label="Situation room">
+      <div class="side-tabs" role="tablist">
+        <button type="button" role="tab" data-tab="chirp" aria-selected="true">🐦 Chirp<i class="badge-dot hidden" id="chirp-dot"></i></button>
+        <button type="button" role="tab" data-tab="econ">📊 Economy</button>
+        <button type="button" role="tab" data-tab="polls">🗳️ Polls</button>
+        <button type="button" role="tab" data-tab="budget">💸 Budget</button>
+      </div>
+
+      <div class="side-pane" data-pane="chirp">
+        <div class="compose" id="compose">
+          <div class="compose-head"><span class="avatar me">🇺🇸</span><div><b id="compose-name">President</b><small id="compose-handle">@POTUS</small></div><span class="compose-status" id="compose-status"></span></div>
+          <p class="compose-text" id="compose-text">What's happening, Mr. President?</p>
+          <div class="tone-row" id="tone-row">
+            <button type="button" data-tone="presidential" title="Unity up, base cools a little">🇺🇸 Presidential</button>
+            <button type="button" data-tone="rally" title="Base up, unity down. Small backfire risk">🔥 Rally the base</button>
+            <button type="button" data-tone="attack" title="Coin flip: approval up or down">⚔️ Attack</button>
+            <button type="button" data-tone="meme" title="Goes viral or gets ratioed">😂 Meme</button>
+          </div>
+          <small class="compose-note">One post per quarter. Posts move approval, unity and your base.</small>
+        </div>
+        <div class="trending" id="trending"></div>
+        <ol class="feed" id="feed"></ol>
+      </div>
+
+      <div class="side-pane hidden" data-pane="econ"><div class="econ-grid" id="econ-grid"></div></div>
+      <div class="side-pane hidden" data-pane="polls"><div class="polls" id="polls"></div></div>
+      <div class="side-pane hidden" data-pane="budget"><div class="budget" id="budget"></div></div>
+    </aside>
+    </div>
 
     <div class="paper-wrap hidden" id="paper">
       <div class="paper" role="dialog" aria-modal="true" aria-labelledby="paper-head">
@@ -279,6 +313,7 @@
         <div class="roller" id="roller"></div>
         <h2 id="paper-head"></h2>
         <div class="paper-choice" id="paper-choice"></div>
+        <div class="paper-money" id="paper-money"></div>
         <div class="deltas" id="paper-deltas"></div>
         <button class="btn btn-go" id="paper-next" type="button">Continue <kbd>Enter</kbd></button>
       </div>

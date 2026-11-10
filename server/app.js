@@ -466,10 +466,22 @@ async function handle(req, res) {
       if (s.ended) return fail(res, 409, 'Your presidency is over.');
       const choice = Number(body.choice);
       if (!Number.isInteger(choice) || choice < -1 || choice > 3) return fail(res, 400, 'Invalid choice.');
-      if (!spend(s.n)) return fail(res, 409, 'That decision was already made.');
+      if (spent.has(s.n)) return fail(res, 409, 'That decision was already made.');
       const out = sim.choose(s, choice);
-      if (out.error) return fail(res, 409, out.error);
+      if (out.error) return fail(res, 409, out.error); // failed attempts don't burn the token
+      spend(s.n);
       return send(res, 200, { token: issue(s), outcome: out, state: sim.view(s), card: s.ended ? null : sim.cardView(s) });
+    }
+
+    if (p === '/api/sim/post' && req.method === 'POST') {
+      const body = await readJson(req);
+      const s = open(body.token);
+      if (!s || !s.m) return fail(res, 404, 'Game not found — start a new term.');
+      if (spent.has(s.n)) return fail(res, 409, 'That action was already taken.');
+      const out = sim.post(s, String(body.tone || ''));
+      if (out.error) return fail(res, 409, out.error);
+      spend(s.n);
+      return send(res, 200, { token: issue(s), post: out, state: sim.view(s), card: s.ended ? null : sim.cardView(s) });
     }
 
     if (p === '/api/sim/submit' && req.method === 'POST') {

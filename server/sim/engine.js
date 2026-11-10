@@ -2,7 +2,8 @@
 // state can travel inside an encrypted token (no server memory needed).
 
 const crypto = require('crypto');
-const CARDS = require('./cards');
+const CARDS = [...require('./cards'), ...require('./cards_more')];
+const econ = require('./econ');
 
 const byId = new Map(CARDS.map((c) => [c.id, c]));
 const METERS = ['eco', 'sec', 'dip', 'env', 'uni', 'tre', 'app', 'base'];
@@ -57,12 +58,19 @@ function newGame({ name, party, background }) {
     at: Date.now(),
     peak: m.app,
     low: m.app,
+    e: econ.newEcon(),
+    posted: -1,
   };
-  s.card = pickCard(s);
+  drawCard(s);
   return s;
 }
 
 // ---------------------------------------------------------------- card selection
+function drawCard(s) {
+  s.card = pickCard(s);
+  s.shock = econ.applyShock(s.e, s.card);
+}
+
 function pickCard(s) {
   const qInTerm = s.q % QUARTERS_PER_TERM;
 
@@ -79,7 +87,7 @@ function pickCard(s) {
     return id;
   }
 
-  const pool = CARDS.filter((c) => !c.only && !s.used.includes(c.id) && (!c.term || c.term === s.term));
+  const pool = CARDS.filter((c) => !c.only && !s.used.includes(c.id) && (!c.term || c.term === s.term) && (!c.needs || c.needs(s)));
   // Second-term legacy cards get priority near the end.
   const legacy = pool.filter((c) => c.term === 2);
   if (s.term === 2 && qInTerm >= 10 && legacy.length && rand() < 0.5) return legacy[crypto.randomInt(legacy.length)].id;
@@ -119,7 +127,8 @@ function cardView(s) {
     title: c.title,
     text: c.text,
     adv: c.adv || [],
-    options: c.options.map((o) => {
+    shock: s.shock || null,
+    options: c.options.map((o, i) => {
       const odds = rollOdds(s, o);
       const bill = o.bill ? billOdds(s) : null;
       return {
@@ -130,6 +139,7 @@ function cardView(s) {
         odds: odds === null ? null : Math.round(odds * 100),
         bill: bill === null ? null : Math.round(bill * 100),
         hint: hintFor(o),
+        usd: econ.priceOf(c.id, i, o),
       };
     }),
   };
@@ -199,8 +209,9 @@ function choose(s, choiceIdx) {
   }
 
   applyFx(s, fx, deltas);
+  const blocked = !!(out.bill && !out.bill.passed);
 
-  if (opt.roll && !(out.bill && !out.bill.passed)) {
+  if (opt.roll && !blocked) {
     const p = rollOdds(s, opt);
     const ok = rand() < p;
     const r = ok ? opt.roll.ok : opt.roll.bad;
@@ -214,6 +225,11 @@ function choose(s, choiceIdx) {
 
   for (const f of flags) if (!s.flags.includes(f)) s.flags.push(f);
   schedule(s, sched);
+
+  // The real-money side: price tag, market reaction, jobs, prices.
+  const ec = econ.applyChoice(s.e, card.id, choiceIdx, opt, { blocked, ok: out.ok, deltas });
+  out.usd = ec.usd;
+  out.econMoved = ec.moved;
   if (!s.used.includes(card.id)) s.used.push(card.id);
   s.hist.push([card.id, choiceIdx, out.ok === null ? (out.bill ? (out.bill.passed ? 1 : 0) : 2) : out.ok ? 1 : 0]);
   out.news = news;
@@ -242,14 +258,17 @@ function choose(s, choiceIdx) {
   // Collapse conditions.
   if (s.m.app <= 8) return finish(s, out, 'collapse');
 
-  s.card = pickCard(s);
+  drawCard(s);
   return out;
 }
 
 // Approval drifts toward what the fundamentals justify; political capital regenerates.
 function endOfQuarter(s, deltas) {
   const m = s.m;
-  const fundamentals = m.eco * 0.4 + m.uni * 0.2 + m.sec * 0.2 + m.dip * 0.08 + m.env * 0.06 + m.tre * 0.06;
+  econ.tick(s.e, m);
+  // Voters feel the "misery index" (unemployment + inflation) and the price of gas.
+  const pain = (econ.misery(s.e) - 7.5) * 1.1 + Math.max(0, s.e.gas - 4) * 2.5;
+  const fundamentals = m.eco * 0.4 + m.uni * 0.2 + m.sec * 0.2 + m.dip * 0.08 + m.env * 0.06 + m.tre * 0.06 - pain;
   const honeymoon = s.q < 2 ? 4 : 0;
   const before = m.app;
   m.app = clamp(m.app + (fundamentals + honeymoon - m.app) * 0.18);
@@ -310,6 +329,8 @@ function election(s) {
     (m.app - 59) * 0.9 + (m.eco - 53) * 0.3 + (m.uni - 52) * 0.12 + (m.base - 72) * 0.1 + (m.sec - 58) * 0.05 +
     (f.includes('camp_base') ? 1.5 : 0) + (f.includes('camp_middle') ? 2 : 0) + (f.includes('camp_negative') ? 2.5 : 0) +
     (f.includes('debate_win') ? 2.5 : 0) + (rand() * 8 - 4);
+  national -= (econ.misery(s.e) - 7.5) * 0.5;
+  national += Math.max(-3, Math.min(3, (s.e.dow / econ.START.dow - 1) * 8));
   if (s.party === 'independent') national -= 4; // no party machine
   const sign = PARTIES[s.party].sign;
   let ev = 0;
@@ -378,6 +399,7 @@ function endingView(s) {
     legacy: legacyOf(s),
     achievements: ACHIEVEMENTS.filter(([id]) => (s.ach || []).includes(id)).map(([id, emoji, label]) => ({ id, emoji, label })),
     quarters: s.q,
+    report: econ.report(s.e, s.q),
     timeline: s.hist.map(([cid, choice, ok]) => {
       const c = byId.get(cid);
       return { title: c.title, cat: c.cat, choice: choice === -1 ? 'Indecision' : c.options[choice].label, ok };
@@ -405,7 +427,65 @@ function view(s) {
     q: s.q,
     totalQ: QUARTERS_PER_TERM * 2,
     ended: s.ended,
+    econ: econ.view(s.e),
+    budget: s.e.log
+      .map(([cid, idx, usd]) => {
+        const c = byId.get(cid);
+        return c && c.options[idx] ? { title: c.title, choice: c.options[idx].label, usd } : null;
+      })
+      .filter(Boolean),
+    polls: polls(s),
+    canPost: !s.ended && s.posted !== s.q,
   };
 }
 
-module.exports = { newGame, choose, cardView, view, endingView, legacyOf, PARTIES, BACKGROUNDS, STATES, LABEL };
+// Approval by voter group, derived from the meters and the real economy.
+function polls(s) {
+  const m = s.m;
+  const e = s.e;
+  const c = (v) => Math.max(3, Math.min(97, Math.round(v)));
+  const indie = s.party === 'independent';
+  return [
+    ['Your party', '🎗️', c(indie ? m.base - 5 : m.base + 8)],
+    ['Independents', '⚖️', c(m.app - 3 + (m.uni - 50) * 0.2)],
+    ['Opposition', '🥊', c(m.app - (indie ? 22 : 36) + (m.uni - 50) * 0.35)],
+    ['Under 30', '🎧', c(m.app - 2 + (m.env - 50) * 0.3 - (e.u - 4) * 1.5)],
+    ['Seniors', '👴', c(m.app + 2 + (m.sec - 50) * 0.2 + (m.tre - 50) * 0.12)],
+    ['Working class', '🧰', c(m.app - (e.i - 3) * 2.2 - (e.u - 4) * 2 - Math.max(0, e.gas - 3.5) * 4)],
+    ['Business', '💼', c(m.app + (m.eco - 50) * 0.5 + (e.dow / econ.START.dow - 1) * 30)],
+    ['Suburban moms', '🏡', c(m.app + (m.uni - 50) * 0.25 - (e.i - 3) * 1.5)],
+  ].map(([label, emoji, pct]) => ({ label, emoji, pct }));
+}
+
+// ---------------------------------------------------------------- the president posts
+const TONES = {
+  presidential: { label: 'Presidential', fx: { uni: 2, app: 1, base: -1 } },
+  rally: { label: 'Fire up the base', fx: { base: 5, uni: -3 }, roll: { p: 0.75, bad: { app: -3 } } },
+  attack: { label: 'Attack the opposition', fx: { base: 3, uni: -4 }, roll: { p: 0.5, ok: { app: 2 }, bad: { app: -3 } } },
+  meme: { label: 'Post a meme', fx: {}, roll: { p: 0.55, ok: { app: 3, base: 2 }, bad: { app: -4 } } },
+};
+
+function post(s, tone) {
+  if (s.ended) return { error: 'Your presidency is over.' };
+  if (s.posted === s.q) return { error: 'You already posted this quarter.' };
+  const t = TONES[tone];
+  if (!t) return { error: 'Invalid post.' };
+  s.posted = s.q;
+  const deltas = {};
+  applyFx(s, t.fx, deltas);
+  let ok = null;
+  if (t.roll) {
+    ok = rand() < t.roll.p;
+    applyFx(s, ok ? t.roll.ok : t.roll.bad, deltas);
+  }
+  const reach = 0.5 + rand() + (ok === true ? 1.5 : ok === false ? 1.2 : 0) + (tone === 'meme' ? 0.8 : 0);
+  const views = Math.round((2 + reach * 9) * 1_000_000 * (0.6 + s.m.app / 100));
+  return {
+    tone,
+    ok,
+    deltas,
+    viral: { views, likes: Math.round(views * (ok === false ? 0.012 : 0.045) * (0.7 + rand() * 0.6)), reposts: Math.round(views * 0.006 * (0.6 + rand())), ratio: ok === false },
+  };
+}
+
+module.exports = { newGame, choose, post, cardView, view, endingView, legacyOf, PARTIES, BACKGROUNDS, STATES, LABEL };
