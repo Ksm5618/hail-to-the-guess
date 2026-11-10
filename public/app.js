@@ -65,6 +65,10 @@
       },
       wrong: () => { tone(220, { dur: 0.35, type: 'sawtooth', vol: 0.09, slide: -120 }); tone(165, { at: 0.12, dur: 0.4, type: 'sawtooth', vol: 0.08, slide: -80 }); },
       start: () => [392, 523.25, 659.25, 783.99].forEach((f, i) => tone(f, { at: i * 0.09, dur: 0.18, type: 'square', vol: 0.06 })),
+      beep: (high) => tone(high ? 1046.5 : 523.25, { dur: high ? 0.45 : 0.18, type: 'square', vol: 0.09 }),
+      whoosh: () => tone(300, { dur: 0.25, type: 'sine', vol: 0.06, slide: 900 }),
+      combo: () => [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => tone(f, { at: i * 0.05, dur: 0.3, type: 'square', vol: 0.07 })),
+      broken: () => tone(400, { dur: 0.6, type: 'sawtooth', vol: 0.08, slide: -330 }),
       fanfare: (good) => {
         const notes = good ? [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5] : [392, 349.23, 329.63, 261.63];
         notes.forEach((f, i) => tone(f, { at: i * 0.13, dur: 0.28, type: 'triangle', vol: 0.15 }));
@@ -163,6 +167,48 @@
     toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
   }
 
+  // ------------------------------------------------------------------ Big FX
+  function restartAnim(node, cls) {
+    node.classList.remove(cls);
+    void node.offsetWidth;
+    node.classList.add(cls);
+  }
+  function flash(kind) {
+    const f = $('#flash');
+    f.className = 'flash';
+    void f.offsetWidth;
+    f.classList.add(kind);
+  }
+  function slam(text, kind = '') {
+    if (reduceMotion) return;
+    const s = $('#slam');
+    s.textContent = text;
+    s.className = `slam ${kind}`;
+    void s.offsetWidth;
+    s.classList.add('go');
+  }
+  function shakeScreen() {
+    if (reduceMotion) return;
+    document.body.classList.remove('shake-screen');
+    void document.body.offsetWidth;
+    document.body.classList.add('shake-screen');
+    setTimeout(() => document.body.classList.remove('shake-screen'), 500);
+  }
+  async function countdown() {
+    const c = $('#countdown');
+    c.classList.add('on');
+    for (const n of ['3', '2', '1', 'GO!']) {
+      const span = el('span', { textContent: n });
+      if (n === 'GO!') span.classList.add('go');
+      c.replaceChildren(span);
+      Sound.beep(n === 'GO!');
+      await sleep(reduceMotion ? 150 : n === 'GO!' ? 550 : 650);
+    }
+    c.classList.remove('on');
+    c.replaceChildren();
+  }
+  const setVignette = (on) => $('#vignette').classList.toggle('on', on);
+
   // ------------------------------------------------------------------ Screens
   function show(id) {
     for (const s of document.querySelectorAll('.screen')) s.classList.toggle('active', s.id === id);
@@ -192,7 +238,22 @@
     });
   }
 
+  let marqueeLoaded = false;
+  async function loadMarquee() {
+    if (marqueeLoaded) return;
+    try {
+      const { faces } = await api('/api/faces');
+      marqueeLoaded = true;
+      const half = Math.ceil(faces.length / 2);
+      [faces.slice(0, half), faces.slice(half)].forEach((row, i) => {
+        const imgs = [...row, ...row].map((src) => el('img', { src, alt: '', loading: 'lazy', decoding: 'async', draggable: false }));
+        $(i ? '#mq2' : '#mq1').replaceChildren(...imgs);
+      });
+    } catch { /* decorative only */ }
+  }
+
   async function loadHome() {
+    loadMarquee();
     try {
       meta = await api('/api/meta');
     } catch {
@@ -290,10 +351,12 @@
 
   function resetGame() {
     for (const u of game.blobs) URL.revokeObjectURL(u);
-    Object.assign(game, { round: null, phase: 'idle', q: null, blobs: [], results: [], score: 0 });
+    Object.assign(game, { round: null, phase: 'idle', q: null, blobs: [], results: [], score: 0, streak: 0 });
     cancelAnimationFrame(game.timerRaf);
     $('#score').textContent = '0';
     setStreak(0);
+    setVignette(false);
+    document.body.classList.remove('fever');
     $('#pips').replaceChildren(...Array.from({ length: 10 }, () => el('div', { className: 'pip' })));
   }
 
@@ -311,6 +374,10 @@
     }
     $('#pips').replaceChildren(...Array.from({ length: game.round.total }, () => el('div', { className: 'pip' })));
     show('game');
+    $('#portrait').classList.remove('in');
+    $('#portrait').removeAttribute('src');
+    $('#choices').replaceChildren();
+    await countdown();
     loadQuestion();
   }
 
@@ -356,6 +423,8 @@
     await portrait.decode().catch(() => {});
     $('#loader').style.display = 'none';
     portrait.classList.add('in');
+    restartAnim(portrait.parentElement, 'reveal');
+    Sound.whoosh();
 
     $('#q-label').textContent = `Question ${q.index + 1} of ${q.total}`;
     [...$('#pips').children].forEach((p, i) => p.classList.toggle('current', i === q.index));
@@ -404,6 +473,7 @@
       const sec = Math.ceil(left / 1000);
       $('#timer').textContent = sec;
       $('#timer-chip').classList.toggle('low', sec <= 5);
+      setVignette(sec <= 5 && left > 0);
       if (sec <= 5 && sec > 0 && sec !== game.lastTickSec) { Sound.tick(sec <= 3); game.lastTickSec = sec; }
       if (left <= 0) return submitGuess(guessInput.value, true);
       game.timerRaf = requestAnimationFrame(step);
@@ -415,6 +485,7 @@
     if (game.phase !== 'guessing') return;
     game.phase = 'submitting';
     cancelAnimationFrame(game.timerRaf);
+    setVignette(false);
     guessInput.disabled = true;
     $('#submit').disabled = true;
     $('#skip').disabled = true;
@@ -478,8 +549,12 @@
     pip.classList.remove('current');
     pip.classList.add(r.correct ? 'good' : 'bad');
 
+    const prevStreak = game.streak || 0;
+    game.streak = r.streak;
+    const milestones = { 3: 'Combo x3 🔥', 5: 'Unstoppable!', 7: 'Legendary!', 10: 'Perfect run!' };
     if (r.correct) {
-      Sound.correct(r.streak);
+      flash('good');
+      if (milestones[r.streak]) { setTimeout(() => { slam(milestones[r.streak]); Sound.combo(); }, 250); }
       game.score = r.score;
       const s = $('#score');
       s.textContent = r.score;
@@ -496,6 +571,9 @@
         power: 0.9 + Math.min(r.streak, 5) * 0.08,
       });
     } else {
+      flash('bad');
+      shakeScreen();
+      if (prevStreak >= 3) setTimeout(() => { slam('Combo broken', 'bad'); Sound.broken(); }, 200);
       Sound.wrong();
       cardWrap.classList.remove('shake'); void cardWrap.offsetWidth; cardWrap.classList.add('shake');
     }
@@ -513,6 +591,7 @@
     const s = $('#streak');
     s.classList.toggle('lit', n >= 2);
     s.classList.toggle('inferno', n >= 5);
+    document.body.classList.toggle('fever', n >= 3);
   }
 
   $('#answer-form').addEventListener('submit', (e) => {
@@ -547,6 +626,11 @@
     card.style.transform = `rotateY(${dx * 14}deg) rotateX(${-dy * 14}deg)`;
   });
   cardWrap.addEventListener('pointerleave', () => { card.style.transform = ''; });
+  cardWrap.addEventListener('pointermove', (e) => {
+    const r = cardWrap.getBoundingClientRect();
+    cardWrap.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
+    cardWrap.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
+  });
   new MutationObserver(() => { card.style.transform = ''; }).observe(card, { attributes: true, attributeFilter: ['class'] });
 
   // ------------------------------------------------------------------ Results
@@ -602,6 +686,13 @@
     $('#player').value = store.get('player', '');
 
     show('results');
+    document.body.classList.remove('fever');
+    const ringFg = $('#sr-fg');
+    ringFg.style.transition = 'none';
+    ringFg.style.strokeDashoffset = '100';
+    void ringFg.getBoundingClientRect();
+    ringFg.style.transition = '';
+    requestAnimationFrame(() => { ringFg.style.strokeDashoffset = String(100 - frac * 100); });
     loadLeaderboard(summary.mode, $('#res-lb'), undefined, summary.style);
 
     // count-up

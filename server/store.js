@@ -21,9 +21,14 @@ let timer = null;
 function flush() {
   clearTimeout(timer);
   timer = null;
-  const tmp = `${FILE}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(db));
-  fs.renameSync(tmp, FILE);
+  try {
+    fs.mkdirSync(DIR, { recursive: true });
+    const tmp = `${FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(db));
+    fs.renameSync(tmp, FILE);
+  } catch (err) {
+    console.error('Could not save scores:', err.message); // keep serving; retry on next change
+  }
 }
 function save() {
   if (!timer) timer = setTimeout(flush, 500);

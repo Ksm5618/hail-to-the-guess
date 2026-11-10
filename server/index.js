@@ -38,6 +38,10 @@ const MODES = {
 
 const byId = new Map(presidents.map((p) => [p.id, p]));
 const rounds = new Map(); // roundId -> round
+
+// Decorative face wall for the home screen. Opaque ids (fresh every boot) so the
+// URLs never reveal who's who.
+const faceIds = new Map(presidents.map((p) => [crypto.randomBytes(9).toString('base64url'), p.id]));
 const imageTokens = new Map(); // token -> { presidentId, expires }
 
 // ---------- helpers ----------
@@ -305,7 +309,7 @@ const server = http.createServer(async (req, res) => {
       return serveStatic(req, res, p);
     }
 
-    if (!allow(ip)) return fail(res, 429, 'Slow down a little!');
+    if (!p.startsWith('/api/face/') && !allow(ip)) return fail(res, 429, 'Slow down a little!');
 
     // GET /api/portrait/:token — opaque, one-shot portrait URL
     let m = p.match(/^\/api\/portrait\/([\w-]+)$/);
@@ -316,6 +320,21 @@ const server = http.createServer(async (req, res) => {
       return fs.readFile(file, (err, buf) => {
         if (err) return fail(res, 404, 'Portrait missing — run `npm run portraits`');
         res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'Content-Length': buf.length });
+        res.end(buf);
+      });
+    }
+
+    if (p === '/api/faces' && req.method === 'GET') {
+      return send(res, 200, { faces: shuffle([...faceIds.keys()]).map((k) => `/api/face/${k}`) });
+    }
+
+    m = p.match(/^\/api\/face\/([\w-]+)$/);
+    if (m && req.method === 'GET') {
+      const pid = faceIds.get(m[1]);
+      if (!pid) return fail(res, 404, 'Not found');
+      return fs.readFile(path.join(PORTRAITS, `${pid}.jpg`), (err, buf) => {
+        if (err) return fail(res, 404, 'Not found');
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400', 'Content-Length': buf.length });
         res.end(buf);
       });
     }
