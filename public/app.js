@@ -367,6 +367,7 @@
     game.phase = 'loading';
     try {
       game.round = await api('/api/rounds', { mode, style });
+      game.token = game.round.token;
     } catch (e) {
       game.phase = 'idle';
       toast(e.message);
@@ -405,7 +406,8 @@
 
     let q, blobUrl;
     try {
-      q = await api(`/api/rounds/${game.round.roundId}/next`, {});
+      q = await api('/api/round/next', { token: game.token });
+      game.token = q.token;
       if (q.done) return finishRound();
       const deadline = performance.now() + q.secondsLeft * 1000;
       const img = await fetch(q.image);
@@ -493,7 +495,8 @@
 
     let r;
     try {
-      r = await api(`/api/rounds/${game.round.roundId}/answer`, { index: game.q.index, guess });
+      r = await api('/api/round/answer', { token: game.token, index: game.q.index, guess });
+      game.token = r.token;
     } catch (e) {
       toast(e.message);
       game.phase = 'guessing';
@@ -650,7 +653,7 @@
   async function finishRound() {
     game.phase = 'idle';
     try {
-      summary = await api(`/api/rounds/${game.round.roundId}/summary`);
+      summary = await api('/api/round/summary', { token: game.token });
     } catch (e) {
       toast(e.message);
       return;
@@ -718,7 +721,7 @@
     $('#save-btn').disabled = true;
     store.set('player', name);
     try {
-      const r = await api(`/api/rounds/${game.round.roundId}/submit`, { name });
+      const r = await api('/api/round/submit', { token: game.token, name });
       $('#save-form').classList.add('hidden');
       const saved = $('#saved');
       saved.textContent = r.rank && r.rank <= 20
