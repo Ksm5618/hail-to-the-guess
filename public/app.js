@@ -178,6 +178,19 @@
   let meta = null;
   let mode = store.get('mode', 'classic');
   let lbMode = mode;
+  let style = store.get('style', 'choice');
+  if (style !== 'choice' && style !== 'type') style = 'choice';
+
+  function renderStyles() {
+    for (const b of document.querySelectorAll('.style-opt')) b.setAttribute('aria-checked', String(b.dataset.style === style));
+  }
+  renderStyles();
+  for (const b of document.querySelectorAll('.style-opt')) {
+    b.addEventListener('click', () => {
+      style = b.dataset.style; store.set('style', style); Sound.click(); renderStyles();
+      loadLeaderboard(lbMode, $('#home-lb'));
+    });
+  }
 
   async function loadHome() {
     try {
@@ -192,7 +205,7 @@
     loadLeaderboard(lbMode, $('#home-lb'));
     const s = meta.stats;
     $('#gstats').replaceChildren(
-      ...[[s.roundsPlayed.toLocaleString(), 'Rounds played'], [s.guesses.toLocaleString(), 'Faces guessed'], [s.accuracy === null ? '—' : `${s.accuracy}%`, 'Nation accuracy']]
+      ...[[s.roundsPlayed.toLocaleString(), 'Rounds played'], [s.guesses.toLocaleString(), 'Names typed'], [s.accuracy === null ? '—' : `${s.accuracy}%`, 'Nation accuracy']]
         .map(([v, l]) => el('div', {}, el('b', { textContent: v }), el('span', { textContent: l }))),
     );
     api('/api/hall-of-shame').then(({ hardest }) => {
@@ -245,9 +258,9 @@
     }));
   }
 
-  async function loadLeaderboard(m, list, meId) {
+  async function loadLeaderboard(m, list, meId, st = style) {
     try {
-      const { entries } = await api(`/api/leaderboard?mode=${encodeURIComponent(m)}`);
+      const { entries } = await api(`/api/leaderboard?mode=${encodeURIComponent(m)}&style=${encodeURIComponent(st)}`);
       renderLeaderboard(list, entries, meId);
     } catch {
       list.replaceChildren(el('li', { className: 'lb-empty', textContent: 'Leaderboard unavailable.' }));
@@ -290,7 +303,7 @@
     resetGame();
     game.phase = 'loading';
     try {
-      game.round = await api('/api/rounds', { mode });
+      game.round = await api('/api/rounds', { mode, style });
     } catch (e) {
       game.phase = 'idle';
       toast(e.message);
@@ -311,6 +324,10 @@
       await sleep(reduceMotion ? 0 : 450);
     }
     $('#loader').style.display = '';
+    const isChoice = game.round.style === 'choice';
+    $('#answer-form').classList.toggle('hidden', isChoice);
+    $('#choices').classList.toggle('hidden', !isChoice);
+    $('#choices').replaceChildren();
     guessInput.value = '';
     guessInput.disabled = true;
     $('#submit').disabled = true;
@@ -342,14 +359,34 @@
 
     $('#q-label').textContent = `Question ${q.index + 1} of ${q.total}`;
     [...$('#pips').children].forEach((p, i) => p.classList.toggle('current', i === q.index));
-    guessInput.disabled = false;
-    $('#submit').disabled = false;
     $('#skip').disabled = false;
-    guessInput.focus();
+    if (q.options) renderChoices(q.options);
+    else {
+      guessInput.disabled = false;
+      $('#submit').disabled = false;
+      guessInput.focus();
+    }
     game.phase = 'guessing';
     game.lastTickSec = null;
     runTimer();
   }
+
+  function renderChoices(options) {
+    $('#choices').replaceChildren(...options.map((name, i) => {
+      const b = el('button', { type: 'button', className: 'choice' }, el('span', { className: 'key', textContent: i + 1 }), el('span', { textContent: name }));
+      b.dataset.name = name;
+      b.addEventListener('click', () => pickChoice(b));
+      return b;
+    }));
+  }
+
+  function pickChoice(btn) {
+    if (game.phase !== 'guessing') return;
+    btn.classList.add('picked');
+    submitGuess(btn.dataset.name);
+  }
+
+  const choiceButtons = () => [...document.querySelectorAll('#choices .choice')];
 
   function setRing(frac) {
     ring.style.strokeDashoffset = String(100 - frac * 100);
@@ -381,6 +418,7 @@
     guessInput.disabled = true;
     $('#submit').disabled = true;
     $('#skip').disabled = true;
+    choiceButtons().forEach((b) => { b.disabled = true; });
 
     let r;
     try {
@@ -388,8 +426,8 @@
     } catch (e) {
       toast(e.message);
       game.phase = 'guessing';
-      guessInput.disabled = false;
-      $('#submit').disabled = false;
+      if (game.round.style === 'choice') choiceButtons().forEach((b) => { b.disabled = false; b.classList.remove('picked'); });
+      else { guessInput.disabled = false; $('#submit').disabled = false; }
       $('#skip').disabled = false;
       runTimer();
       return;
@@ -423,10 +461,16 @@
     your.replaceChildren();
     if (!r.correct && guess.trim()) {
       your.append('You said ', el('s', { textContent: guess.trim() }));
-      if (r.guessedAs) your.append(` (that's ${r.guessedAs})`);
+      if (r.guessedAs && r.guessedAs !== guess.trim()) your.append(` (that's ${r.guessedAs})`);
       else if (r.almost) your.append(' — so close! Need the first name.');
     }
     $('#reveal-global').replaceChildren(r.globalCorrectRate === null ? '' : el('span', {}, el('b', { textContent: `${r.globalCorrectRate}%` }), ' of players get this one'));
+
+    for (const b of choiceButtons()) {
+      if (b.dataset.name === p.name) b.classList.add('right');
+      else if (b.dataset.name === guess) b.classList.add('wrong');
+      else b.classList.add('dim');
+    }
 
     card.classList.add('flipped');
 
@@ -534,7 +578,7 @@
     $('#res-total').textContent = summary.total;
     $('#res-streak').textContent = summary.bestStreak;
     $('#res-time').textContent = fmtTime(summary.totalMs / summary.total);
-    $('#res-mode').textContent = summary.modeLabel;
+    $('#res-mode').textContent = `${summary.modeLabel}${summary.style === 'choice' ? ' · MC' : ' · Typed'}`;
 
     const starsOn = Math.round(frac * 5);
     $('#stars-row').replaceChildren(...Array.from({ length: 5 }, (_, i) => {
@@ -558,7 +602,7 @@
     $('#player').value = store.get('player', '');
 
     show('results');
-    loadLeaderboard(summary.mode, $('#res-lb'));
+    loadLeaderboard(summary.mode, $('#res-lb'), undefined, summary.style);
 
     // count-up
     const scoreEl = $('#res-score');
@@ -587,7 +631,7 @@
       $('#save-form').classList.add('hidden');
       const saved = $('#saved');
       saved.textContent = r.rank && r.rank <= 20
-        ? `🎉 You're #${r.rank} on the ${summary.modeLabel} leaderboard!`
+        ? `🎉 You're #${r.rank} on the ${summary.modeLabel} (${summary.styleLabel}) leaderboard!`
         : r.rank ? `Saved! You're #${r.rank} — keep climbing.` : 'Saved! Not on the board yet — go again.';
       saved.classList.remove('hidden');
       renderLeaderboard($('#res-lb'), r.entries, r.you);
@@ -604,7 +648,7 @@
   $('#share').addEventListener('click', async () => {
     if (!summary) return;
     const grid = summary.results.map((r) => (r.correct ? '🟩' : '🟥')).join('');
-    const text = `Hail to the Guess 🇺🇸 ${summary.score}/${summary.total} — ${$('#res-rank').textContent}\n${summary.modeLabel} • best streak ${summary.bestStreak}🔥\n${grid}`;
+    const text = `Hail to the Guess 🇺🇸 ${summary.score}/${summary.total} — ${$('#res-rank').textContent}\n${summary.modeLabel} · ${summary.styleLabel} • best streak ${summary.bestStreak}🔥\n${grid}`;
     try {
       await navigator.clipboard.writeText(text);
       toast('Copied! Go brag. 📋');
@@ -621,6 +665,10 @@
     if (screen === 'home' && e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); startRound(); }
     if (screen === 'game') {
       if (e.key === 'Escape' && game.phase === 'guessing') { e.preventDefault(); submitGuess(''); }
+      if (/^[1-4]$/.test(e.key) && !typing && game.phase === 'guessing' && game.round.style === 'choice') {
+        const b = choiceButtons()[Number(e.key) - 1];
+        if (b) { e.preventDefault(); pickChoice(b); }
+      }
       if (e.key === 'Enter' && (game.phase === 'revealed' || game.phase === 'done') && !typing) { e.preventDefault(); advance(); }
     }
     if (screen === 'results' && e.key === 'Enter' && !typing && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); startRound(); }

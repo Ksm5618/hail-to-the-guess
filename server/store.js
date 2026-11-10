@@ -53,6 +53,10 @@ function recordAnswer(id, correct) {
   return s;
 }
 
+function answerStat(id) {
+  return db.answers[id] || { seen: 0, correct: 0 };
+}
+
 function recordRound() {
   db.roundsPlayed += 1;
   save();
@@ -76,4 +80,4 @@ function hardest(n) {
     .slice(0, n);
 }
 
-module.exports = { addScore, leaderboard, recordAnswer, recordRound, globalStats, hardest, flush };
+module.exports = { addScore, leaderboard, recordAnswer, answerStat, recordRound, globalStats, hardest, flush };

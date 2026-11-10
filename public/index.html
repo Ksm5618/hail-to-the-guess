@@ -33,6 +33,11 @@
 
     <section class="modes" aria-label="Choose a mode" id="modes"></section>
 
+    <div class="styles" id="styles" role="radiogroup" aria-label="How do you want to answer?">
+      <button type="button" class="style-opt" data-style="choice" role="radio"><span class="se">🎯</span><span><b>Multiple choice</b><small>Pick from 4 names</small></span></button>
+      <button type="button" class="style-opt" data-style="type" role="radio"><span class="se">⌨️</span><span><b>Type it</b><small>Pro mode — no hints</small></span></button>
+    </div>
+
     <button id="play" class="btn btn-mega"><span>Play</span><kbd>Enter</kbd></button>
 
     <div class="home-grid">
@@ -93,6 +98,8 @@
         </div>
         <div class="float-pts" id="float-pts">+1</div>
       </div>
+
+      <div class="choices hidden" id="choices"></div>
 
       <form class="answer" id="answer-form" autocomplete="off">
         <input id="guess" name="guess" type="text" placeholder="Who's this?" maxlength="60" spellcheck="false" autocapitalize="words" aria-label="Your guess" />

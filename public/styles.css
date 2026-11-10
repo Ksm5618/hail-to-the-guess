@@ -229,7 +229,7 @@ kbd {
 .stage { display: flex; flex-direction: column; align-items: center; margin-top: 20px; }
 .q-label { font-family: var(--display); color: var(--ink-dim); letter-spacing: .12em; text-transform: uppercase; font-size: 14px; margin-bottom: 14px; }
 
-.card-wrap { position: relative; width: min(340px, 78vw); aspect-ratio: 4 / 5; perspective: 1400px; }
+.card-wrap { position: relative; width: clamp(190px, calc((100svh - 370px) * 0.8), min(340px, 78vw)); aspect-ratio: 4 / 5; perspective: 1400px; }
 .card { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .8s cubic-bezier(.3,1.3,.4,1); }
 .card.flipped { transform: rotateY(180deg); }
 .face { position: absolute; inset: 0; border-radius: var(--radius); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
@@ -354,6 +354,50 @@ kbd {
 }
 .toast.show { transform: translate(-50%, 0); }
 
+/* ---------- answer style toggle ---------- */
+.styles {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 520px; margin: 18px auto 0;
+  padding: 6px; border-radius: 20px; background: rgba(0,0,0,.3); border: 1px solid var(--panel-line);
+}
+.style-opt {
+  display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer;
+  border: 0; border-radius: 15px; padding: 10px 14px; background: none; color: var(--ink-dim);
+  transition: background .2s, color .2s, box-shadow .2s;
+}
+.style-opt .se { font-size: 24px; }
+.style-opt b { display: block; font-size: 15px; }
+.style-opt small { display: block; font-size: 12px; opacity: .8; }
+.style-opt[aria-checked="true"] {
+  background: linear-gradient(135deg, rgba(61,123,255,.55), rgba(122,92,255,.45)); color: var(--ink);
+  box-shadow: 0 6px 20px rgba(61,123,255,.3), inset 0 1px 0 rgba(255,255,255,.2);
+}
+
+/* ---------- multiple choice buttons ---------- */
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: min(560px, 100%); margin-top: 26px; }
+.choice {
+  position: relative; display: flex; align-items: center; gap: 12px; text-align: left;
+  padding: 16px 16px; border-radius: 16px; cursor: pointer; font-size: 17px; font-weight: 700;
+  background: rgba(20, 28, 66, .85); border: 2px solid var(--panel-line);
+  box-shadow: 0 5px 0 rgba(0,0,0,.35);
+  transition: transform .12s, border-color .15s, background .15s, box-shadow .15s, opacity .3s;
+  animation: choiceIn .4s cubic-bezier(.2,1.4,.4,1) backwards;
+}
+.choice:nth-child(2) { animation-delay: .05s; } .choice:nth-child(3) { animation-delay: .1s; } .choice:nth-child(4) { animation-delay: .15s; }
+@keyframes choiceIn { from { opacity: 0; transform: translateY(14px) scale(.95); } }
+.choice .key {
+  flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  font-family: var(--display); font-size: 14px; background: rgba(255,255,255,.08); color: var(--ink-dim);
+}
+.choice:not(:disabled):hover { transform: translateY(-2px); border-color: var(--blue); background: rgba(40, 55, 120, .9); }
+.choice:not(:disabled):active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.choice:disabled { cursor: default; }
+.choice.picked { border-color: var(--gold); }
+.choice.right { border-color: var(--good); background: rgba(47, 227, 154, .18); box-shadow: 0 0 24px var(--good-glow); }
+.choice.right .key { background: var(--good); color: #04241a; }
+.choice.wrong { border-color: var(--bad); background: rgba(255, 77, 109, .18); }
+.choice.wrong .key { background: var(--bad); color: #fff; }
+.choice.dim { opacity: .35; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 760px) {
   .modes { grid-template-columns: 1fr; }
@@ -366,6 +410,11 @@ kbd {
   .hud-right { margin-left: auto; }
   .score-label { display: none; }
   .answer { flex-direction: column; }
+  .choices { gap: 8px; margin-top: 18px; }
+  .choice { padding: 10px; font-size: 14px; gap: 8px; line-height: 1.2; min-height: 58px; }
+  .choice .key { width: 24px; height: 24px; font-size: 12px; }
+  .style-opt { padding: 9px 10px; gap: 8px; }
+  .style-opt .se { font-size: 20px; }
   .answer .btn-go { padding: 14px; }
   .save { flex-direction: column; }
   .recap { grid-template-columns: repeat(5, 1fr); gap: 5px; }

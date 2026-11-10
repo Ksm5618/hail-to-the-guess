@@ -24,6 +24,12 @@ const GRACE_MS = 2500; // network / animation slack
 const ROUND_TTL_MS = 60 * 60 * 1000;
 const MAX_ROUNDS = 5000;
 
+const STYLES = {
+  choice: 'Multiple Choice',
+  type: 'Type It',
+};
+const CHOICES = 4;
+
 const MODES = {
   classic: { label: 'All-Time', filter: () => true },
   modern: { label: 'Modern Era', filter: (p) => p.numbers[0] >= 26 },
@@ -121,6 +127,7 @@ setInterval(() => {
 // ---------- game handlers ----------
 function createRound(body) {
   const mode = MODES[body.mode] ? body.mode : 'classic';
+  const style = STYLES[body.style] ? body.style : 'choice';
   if (rounds.size >= MAX_ROUNDS) {
     const oldest = rounds.keys().next().value;
     rounds.delete(oldest);
@@ -130,6 +137,9 @@ function createRound(body) {
   const round = {
     id: id(),
     mode,
+    style,
+    pool: pool.map((p) => p.id),
+    options: [],
     picks,
     current: -1, // index of the question currently being shown
     shownAt: 0,
@@ -142,7 +152,7 @@ function createRound(body) {
     submitted: false,
   };
   rounds.set(round.id, round);
-  return { roundId: round.id, mode, modeLabel: MODES[mode].label, total: picks.length, secondsPerQuestion: QUESTION_SECONDS };
+  return { roundId: round.id, mode, style, modeLabel: MODES[mode].label, styleLabel: STYLES[style], total: picks.length, secondsPerQuestion: QUESTION_SECONDS };
 }
 
 function nextQuestion(round) {
@@ -156,7 +166,19 @@ function nextQuestion(round) {
   round.shownAt = Date.now();
   round.imageToken = id(18);
   imageTokens.set(round.imageToken, { presidentId: round.picks[index], expires: Date.now() + 10 * 60 * 1000 });
+  if (round.style === 'choice') round.options[index] = makeOptions(round, round.picks[index]);
   return questionPayload(round);
+}
+
+// Distractors come from the same mode pool and, where possible, the same era,
+// so the options are plausible (no Washington vs. Obama giveaways).
+function makeOptions(round, targetId) {
+  const target = byId.get(targetId);
+  const others = round.pool.filter((pid) => pid !== targetId).map((pid) => byId.get(pid));
+  const near = shuffle(others.filter((p) => Math.abs(p.numbers[0] - target.numbers[0]) <= 8));
+  const far = shuffle(others.filter((p) => Math.abs(p.numbers[0] - target.numbers[0]) > 8));
+  const picks = [...near, ...far].slice(0, CHOICES - 1);
+  return shuffle([target, ...picks]).map((p) => p.name);
 }
 
 function questionPayload(round) {
@@ -167,6 +189,7 @@ function questionPayload(round) {
     image: `/api/portrait/${round.imageToken}`,
     secondsLeft: Math.max(0, QUESTION_SECONDS - Math.floor(elapsed / 1000)),
     secondsPerQuestion: QUESTION_SECONDS,
+    options: round.style === 'choice' ? round.options[round.current] : null,
   };
 }
 
@@ -179,7 +202,12 @@ function answer(round, body) {
   const elapsed = Date.now() - round.shownAt;
   const timedOut = elapsed > QUESTION_SECONDS * 1000 + GRACE_MS;
   const guess = String(body.guess || '').slice(0, 60);
-  const verdict = timedOut ? { correct: false, almost: false, matchedId: null } : check(guess, p.id);
+  let verdict;
+  if (timedOut) verdict = { correct: false, almost: false, matchedId: null };
+  else if (round.style === 'choice') {
+    const picked = presidents.find((x) => x.name === guess && round.options[index].includes(x.name));
+    verdict = { correct: picked ? picked.id === p.id : false, almost: false, matchedId: picked ? picked.id : null };
+  } else verdict = check(guess, p.id);
 
   if (verdict.correct) {
     round.score += 1;
@@ -194,7 +222,8 @@ function answer(round, body) {
   // Retire the image token so it can't be reused to look anything up.
   imageTokens.delete(round.imageToken);
 
-  const stat = store.recordAnswer(p.id, verdict.correct);
+  // "Recognition" stats only count typed answers — multiple choice would inflate them.
+  const stat = round.style === 'type' ? store.recordAnswer(p.id, verdict.correct) : store.answerStat(p.id);
   const done = round.results.length >= round.picks.length;
   if (done) store.recordRound();
 
@@ -223,6 +252,8 @@ function summary(round) {
     totalMs: round.totalMs,
     mode: round.mode,
     modeLabel: MODES[round.mode].label,
+    style: round.style,
+    styleLabel: STYLES[round.style],
     results: round.results.map((r) => ({ ...publicPresident(byId.get(r.id)), guess: r.guess, correct: r.correct, ms: r.ms })),
   };
 }
@@ -291,6 +322,7 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/meta' && req.method === 'GET') {
       return send(res, 200, {
+        styles: Object.entries(STYLES).map(([key, label]) => ({ key, label })),
         modes: Object.entries(MODES).map(([key, v]) => ({ key, label: v.label, pool: presidents.filter(v.filter).length })),
         roundSize: ROUND_SIZE,
         secondsPerQuestion: QUESTION_SECONDS,
@@ -300,7 +332,8 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/leaderboard' && req.method === 'GET') {
       const mode = MODES[url.searchParams.get('mode')] ? url.searchParams.get('mode') : 'classic';
-      return send(res, 200, { mode, entries: store.leaderboard(mode, 20) });
+      const style = STYLES[url.searchParams.get('style')] ? url.searchParams.get('style') : 'choice';
+      return send(res, 200, { mode, style, entries: store.leaderboard(`${mode}:${style}`, 20) });
     }
 
     if (p === '/api/hall-of-shame' && req.method === 'GET') {
@@ -344,8 +377,9 @@ const server = http.createServer(async (req, res) => {
           totalMs: round.totalMs,
           at: Date.now(),
         };
-        const rank = store.addScore(round.mode, entry);
-        return send(res, 201, { rank, entries: store.leaderboard(round.mode, 20), you: round.id });
+        const board = `${round.mode}:${round.style}`;
+        const rank = store.addScore(board, entry);
+        return send(res, 201, { rank, entries: store.leaderboard(board, 20), you: round.id });
       }
     }
 
